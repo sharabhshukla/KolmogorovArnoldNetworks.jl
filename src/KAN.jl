@@ -1,5 +1,5 @@
 module KAN
-    export KANLinear, KAN, update_grid!, regularization_loss
+    export KANLinear, KANNetwork, update_grid!, regularization_loss
     using Flux
     using Flux: sigmoid
     using Statistics
@@ -84,18 +84,18 @@ module KAN
 
         println("KANLinear forward - base_output shape: ", size(base_output), ", spline_output shape: ", size(spline_output))
 
-        return base_output + spline_output'
+        return base_output + spline_output
     end
 
-    struct KAN #change var name
+    struct KANNetwork #change var name
         layers::Vector{KANLinear}
     end
 
-    Flux.@functor KAN
+    Flux.@functor KANNetwork
 
-    function KAN(layers_hidden; grid_size=5, spline_order=3, scale_noise=0.1, scale_base=1.0, scale_spline=1.0, base_activation=sigmoid, grid_eps=0.02, grid_range=(-1, 1))
+    function KANNetwork(layers_hidden; grid_size=5, spline_order=3, scale_noise=0.1, scale_base=1.0, scale_spline=1.0, base_activation=sigmoid, grid_eps=0.02, grid_range=(-1, 1))
         layers = [KANLinear(inf, outf; grid_size=grid_size, spline_order=spline_order, scale_noise=scale_noise, scale_base=scale_base, scale_spline=scale_spline, base_activation=base_activation, grid_eps=grid_eps, grid_range=grid_range) for (inf, outf) in zip(layers_hidden[1:end-1], layers_hidden[2:end])]
-        KAN(layers)
+        KANNetwork(layers)
     end
 
     function update_grid!(layer::KANLinear, x; margin=0.01)
@@ -126,15 +126,15 @@ module KAN
         l1_fake = mean(abs, layer.spline_weight, dims=3)
         reg_loss_activation = sum(l1_fake)
         p = l1_fake / reg_loss_activation
-        reg_loss_entropy = -sum(p .* log.(p))
+        reg_loss_entropy = -sum(p .* log1p.(p))
         return regularize_activation * reg_loss_activation + regularize_entropy * reg_loss_entropy
     end
 
-    function regularization_loss(model::KAN; regularize_activation=1.0, regularize_entropy=1.0)
+    function regularization_loss(model::KANNetwork; regularize_activation=1.0, regularize_entropy=1.0)
         return sum(regularization_loss(layer; regularize_activation, regularize_entropy) for layer in model.layers)
     end
 
-    function (model::KAN)(x; update_grid=false)
+    function (model::KANNetwork)(x; update_grid=false)
         for layer in model.layers
             if update_grid
                 update_grid!(layer, x)
